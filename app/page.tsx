@@ -1,261 +1,372 @@
 "use client";
 
-import { useState, useEffect } from 'react';
-import { Search, MapPin, Calendar, ExternalLink, Info, Map as MapIcon, Loader2 } from 'lucide-react';
+import { useEffect, useMemo, useState, type FormEvent } from "react";
+import {
+  ArrowUpRight,
+  CalendarDays,
+  Check,
+  Compass,
+  ExternalLink,
+  Globe2,
+  Info,
+  MapPin,
+  Search,
+  Sparkles,
+} from "lucide-react";
 
-interface EventItem {
+type EventItem = {
   title: string;
-  date: string;
-  location: string;
-  short_description: string;
-  source_url: string;
-}
+  date: string | null;
+  location: string | null;
+  description: string;
+  category: string;
+  source_url: string | null;
+  isCurated: boolean;
+};
 
-interface Place {
-  id: number;
+type Place = {
+  id?: number | string;
   name?: string;
   title?: string;
   description?: string;
   location_url?: string;
-  [key: string]: any;
+};
+
+type Language = "en" | "ar";
+
+const categories = ["All", "Family", "Culture", "Food", "Sports", "Entertainment", "Nature", "Shopping", "Other"];
+
+const copy = {
+  en: {
+    brand: "Kuwait Finder",
+    language: "العربية",
+    eyebrow: "YOUR LOCAL GUIDE",
+    title: "Make room for\nsomething wonderful.",
+    subtitle: "Find memorable events, new places and things to do across Kuwait.",
+    searchPlaceholder: "What would you like to do in Kuwait?",
+    search: "Explore",
+    promptsLabel: "A little inspiration",
+    prompts: ["This weekend", "Family activities", "Free things to do"],
+    results: "Your discoveries",
+    resultCount: (count: number) => `${count} ${count === 1 ? "find" : "finds"}`,
+    curated: "KUWAIT FINDER PICK",
+    web: "FROM THE WEB",
+    dateUnconfirmed: "Date not confirmed",
+    noResults: "Nothing matched just yet",
+    noResultsHint: "Try a broader search or a different category.",
+    searchError: "We couldn’t complete that search. Please try again.",
+    curatedNote: "Curated events aren’t available yet. Apply the events-table migration to enable them.",
+    placesTitle: "Worth going out for",
+    placesSubtitle: "Local favorites, all in one place.",
+    loadingPlaces: "Finding local favorites…",
+    placesError: "Popular places are temporarily unavailable.",
+    noPlaces: "Places will appear here once they are added.",
+    map: "Open map",
+    loading: "Looking around Kuwait…",
+    source: "Event details",
+    emptyPrompt: "Try searching for an event, activity, or place.",
+    privacy: "Your searches are handled securely. API keys stay on our server.",
+    chipAll: "Everything",
+    inputLabel: "Search events and places in Kuwait",
+  },
+  ar: {
+    brand: "دليل الكويت",
+    language: "English",
+    eyebrow: "دليلك المحلي",
+    title: "اكتشف أوقاتاً\nتستحق أن تعاش.",
+    subtitle: "اعثر على فعاليات مميزة وأماكن جديدة وأفكار ممتعة في أنحاء الكويت.",
+    searchPlaceholder: "ما الذي ترغب في اكتشافه في الكويت؟",
+    search: "اكتشف",
+    promptsLabel: "أفكار لتبدأ بها",
+    prompts: ["فعاليات نهاية الأسبوع", "أنشطة عائلية", "أنشطة مجانية"],
+    results: "اكتشافاتك",
+    resultCount: (count: number) => `${count} نتائج`,
+    curated: "اختيار دليل الكويت",
+    web: "من الإنترنت",
+    dateUnconfirmed: "التاريخ غير مؤكد",
+    noResults: "لم نعثر على نتائج بعد",
+    noResultsHint: "جرّب بحثاً أوسع أو فئة مختلفة.",
+    searchError: "تعذّر إكمال البحث. حاول مرة أخرى.",
+    curatedNote: "الفعاليات المختارة غير متاحة بعد. طبّق ترحيل جدول الفعاليات لتفعيلها.",
+    placesTitle: "أماكن تستحق الزيارة",
+    placesSubtitle: "وجهات محلية مفضلة في مكان واحد.",
+    loadingPlaces: "نبحث عن وجهات محلية…",
+    placesError: "الأماكن الشائعة غير متاحة مؤقتاً.",
+    noPlaces: "ستظهر الأماكن هنا عند إضافتها.",
+    map: "افتح الخريطة",
+    loading: "نبحث في أنحاء الكويت…",
+    source: "تفاصيل الفعالية",
+    emptyPrompt: "ابحث عن فعالية أو نشاط أو مكان.",
+    privacy: "تتم معالجة عمليات البحث بأمان، وتبقى مفاتيح API على الخادم.",
+    chipAll: "الكل",
+    inputLabel: "ابحث عن فعاليات وأماكن في الكويت",
+  },
+} as const;
+
+const categoryLabels: Record<string, string> = {
+  All: "الكل",
+  Family: "عائلي",
+  Culture: "ثقافة",
+  Food: "طعام",
+  Sports: "رياضة",
+  Entertainment: "ترفيه",
+  Nature: "طبيعة",
+  Shopping: "تسوق",
+  Other: "أخرى",
+};
+
+function EventSkeleton() {
+  return (
+    <div className="event-skeleton" aria-hidden="true">
+      <div className="skeleton-line skeleton-kicker" />
+      <div className="skeleton-line skeleton-title" />
+      <div className="skeleton-line" />
+      <div className="skeleton-line skeleton-short" />
+      <div className="skeleton-footer"><span /><span /></div>
+    </div>
+  );
 }
 
 export default function Home() {
+  const [language, setLanguage] = useState<Language>("en");
   const [question, setQuestion] = useState("");
   const [events, setEvents] = useState<EventItem[]>([]);
   const [eventsNote, setEventsNote] = useState<string | null>(null);
   const [loadingEvents, setLoadingEvents] = useState(false);
   const [errorEvents, setErrorEvents] = useState("");
-
+  const [searched, setSearched] = useState(false);
+  const [activeCategory, setActiveCategory] = useState("All");
   const [places, setPlaces] = useState<Place[]>([]);
-  const [loadingPlaces, setLoadingPlaces] = useState(false);
-  const [errorPlaces, setErrorPlaces] = useState("");
+  const [loadingPlaces, setLoadingPlaces] = useState(true);
+  const [errorPlaces, setErrorPlaces] = useState(false);
 
-  const exampleQuestions = [
-    "events this weekend",
-    "family activities",
-    "free things to do"
-  ];
+  const isArabic = language === "ar";
+  const t = copy[language];
 
-  const handleAsk = async (q: string) => {
-    if (!q) return;
-    setQuestion(q);
+  const handleAsk = async (value: string) => {
+    const trimmed = value.trim();
+    if (!trimmed || loadingEvents) return;
+    setQuestion(trimmed);
+    setSearched(true);
     setLoadingEvents(true);
     setErrorEvents("");
     setEvents([]);
     setEventsNote(null);
+    setActiveCategory("All");
 
     try {
-      const res = await fetch('/api/ask', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question: q }),
+      const response = await fetch("/api/ask", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question: trimmed }),
       });
-      
-      const data = await res.json();
-      
-      if (!res.ok) {
-        throw new Error(data.error || 'Failed to fetch events');
-      }
-
-      setEvents(data.items || []);
-      setEventsNote(data.note || null);
-    } catch (err: any) {
-      setErrorEvents(err.message || 'An error occurred while finding events');
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || t.searchError);
+      setEvents(Array.isArray(data.items) ? data.items : []);
+      setEventsNote(typeof data.note === "string" ? data.note : null);
+    } catch (error) {
+      setErrorEvents(error instanceof Error ? error.message : t.searchError);
     } finally {
       setLoadingEvents(false);
     }
   };
 
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    void handleAsk(question);
+  };
+
   useEffect(() => {
+    let active = true;
     const fetchPlaces = async () => {
-      setLoadingPlaces(true);
-      setErrorPlaces("");
       try {
-        const res = await fetch('/api/places');
-        const data = await res.json();
-        
-        if (!res.ok) {
-          throw new Error(data.error || 'Failed to fetch places');
-        }
-        
-        setPlaces(data.places || []);
-      } catch (err: any) {
-        setErrorPlaces(err.message || 'An error occurred while loading places');
+        const response = await fetch("/api/places");
+        const data = await response.json();
+        if (!response.ok) throw new Error("Places unavailable");
+        if (active) setPlaces(Array.isArray(data.places) ? data.places : []);
+      } catch {
+        if (active) setErrorPlaces(true);
       } finally {
-        setLoadingPlaces(false);
+        if (active) setLoadingPlaces(false);
       }
     };
-    
-    fetchPlaces();
+    void fetchPlaces();
+    return () => { active = false; };
   }, []);
 
+  const filteredEvents = useMemo(
+    () => activeCategory === "All" ? events : events.filter((event) => event.category === activeCategory),
+    [activeCategory, events],
+  );
+  const curatedEvents = filteredEvents.filter((event) => event.isCurated);
+  const webEvents = filteredEvents.filter((event) => !event.isCurated);
+
+  const formatDate = (date: string) => new Date(`${date}T12:00:00.000Z`).toLocaleDateString(
+    isArabic ? "ar-KW" : "en-US",
+    { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Kuwait" },
+  );
+
+  const renderEventCard = (event: EventItem, index: number) => (
+    <article className="event-card" key={`${event.source_url ?? event.title}-${index}`}>
+      <div className="event-card-topline">
+        <span className={`event-source-tag ${event.isCurated ? "curated-tag" : "web-tag"}`}>
+          {event.isCurated ? <Check size={13} aria-hidden="true" /> : <Globe2 size={13} aria-hidden="true" />}
+          {event.isCurated ? t.curated : t.web}
+        </span>
+        <span className="category-tag">{isArabic ? categoryLabels[event.category] ?? event.category : event.category}</span>
+      </div>
+      <h3 className="event-title">{event.title}</h3>
+      <p className="event-description">{event.description}</p>
+      <div className="event-meta">
+        <div className="meta-row">
+          <CalendarDays size={16} aria-hidden="true" />
+          {event.date ? <time dateTime={event.date}>{formatDate(event.date)}</time> : <span className="unconfirmed-date">{t.dateUnconfirmed}</span>}
+        </div>
+        {event.location && (
+          <div className="meta-row"><MapPin size={16} aria-hidden="true" /><span>{event.location}</span></div>
+        )}
+      </div>
+      {event.source_url && (
+        <a className="event-link" href={event.source_url} target="_blank" rel="noopener noreferrer">
+          {t.source}<ArrowUpRight size={15} aria-hidden="true" />
+        </a>
+      )}
+    </article>
+  );
+
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-zinc-950 text-slate-900 dark:text-slate-100 font-sans pb-20">
-      {/* Header */}
-      <header className="bg-white dark:bg-zinc-900 shadow-sm sticky top-0 z-10 border-b border-slate-200 dark:border-zinc-800">
-        <div className="max-w-5xl mx-auto px-4 py-4 flex items-center gap-2">
-          <MapIcon className="text-blue-600 dark:text-blue-400 w-6 h-6" />
-          <h1 className="text-xl font-bold tracking-tight">Kuwait Finder</h1>
+    <div className="app-shell" dir={isArabic ? "rtl" : "ltr"} lang={language}>
+      <header className="site-header">
+        <div className="header-inner">
+          <a className="brand" href="#top" aria-label={t.brand}>
+            <span className="brand-mark"><Compass size={21} strokeWidth={2.2} /></span>
+            <span>{t.brand}<span className="brand-period">.</span></span>
+          </a>
+          <button className="language-toggle" onClick={() => setLanguage(isArabic ? "en" : "ar")} type="button" aria-label={isArabic ? "Switch to English" : "التبديل إلى العربية"}>
+            <Globe2 size={16} />
+            <span>{t.language}</span>
+          </button>
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto px-4 mt-8 space-y-16">
-        {/* Events Search Section */}
-        <section className="space-y-8">
-          <div className="text-center space-y-4 max-w-2xl mx-auto mt-12">
-            <h2 className="text-4xl font-extrabold tracking-tight text-slate-900 dark:text-white sm:text-5xl">
-              Discover Kuwait
-            </h2>
-            <p className="text-lg text-slate-600 dark:text-slate-400">
-              Find the best events, activities, and places happening around you.
-            </p>
+      <main id="top">
+        <section className="hero-section">
+          <div className="hero-glow hero-glow-one" aria-hidden="true" />
+          <div className="hero-glow hero-glow-two" aria-hidden="true" />
+          <div className="hero-content">
+            <div className="eyebrow"><Sparkles size={14} />{t.eyebrow}</div>
+            <h1>{t.title.split("\n").map((line, index) => <span key={line}>{index > 0 && <br />}{line}</span>)}</h1>
+            <p className="hero-subtitle">{t.subtitle}</p>
+
+            <form className="search-form" onSubmit={handleSubmit} role="search">
+              <label className="sr-only" htmlFor="event-search">{t.inputLabel}</label>
+              <Search className="search-icon" size={20} aria-hidden="true" />
+              <input
+                id="event-search"
+                type="search"
+                value={question}
+                onChange={(event) => setQuestion(event.target.value)}
+                placeholder={t.searchPlaceholder}
+                maxLength={500}
+                autoComplete="off"
+              />
+              <button type="submit" disabled={loadingEvents || !question.trim()}>
+                {t.search}<ArrowUpRight size={17} aria-hidden="true" />
+              </button>
+            </form>
+
+            <div className="prompt-row">
+              <span className="prompt-label">{t.promptsLabel}</span>
+              {t.prompts.map((prompt) => (
+                <button key={prompt} className="prompt-chip" type="button" onClick={() => void handleAsk(prompt)} disabled={loadingEvents}>{prompt}</button>
+              ))}
+            </div>
+          </div>
+          <div className="hero-footnote"><MapPin size={14} />KUWAIT <span>·</span> الكويت</div>
+        </section>
+
+        <section className="discover-section content-width" aria-live="polite">
+          <div className="section-heading">
+            <div>
+              <p className="section-kicker">{question ? (isArabic ? "نتائج بحثك" : "SEARCH RESULTS") : (isArabic ? "ماذا يحدث؟" : "FIND YOUR NEXT PLAN")}</p>
+              <h2>{question ? t.results : (isArabic ? "أين تأخذك الفضول؟" : "Where will curiosity take you?")}</h2>
+            </div>
+            {searched && !loadingEvents && !errorEvents && <span className="result-count">{t.resultCount(filteredEvents.length)}</span>}
           </div>
 
-          <div className="max-w-2xl mx-auto space-y-4">
-            <div className="relative flex items-center">
-              <Search className="absolute left-4 w-5 h-5 text-slate-400" />
-              <input
-                type="text"
-                placeholder="Ask about events, activities, or things to do..."
-                className="w-full pl-12 pr-32 py-4 rounded-full border border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-lg transition-all"
-                value={question}
-                onChange={(e) => setQuestion(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleAsk(question)}
-              />
-              <button 
-                onClick={() => handleAsk(question)}
-                disabled={loadingEvents || !question.trim()}
-                className="absolute right-2 px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Search
-              </button>
-            </div>
-
-            <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
-              <span className="text-sm text-slate-500 dark:text-slate-400">Try:</span>
-              {exampleQuestions.map((q) => (
+          {searched && !loadingEvents && !errorEvents && events.length > 0 && (
+            <div className="category-scroller" aria-label={isArabic ? "تصفية حسب الفئة" : "Filter by category"}>
+              {categories.map((category) => (
                 <button
-                  key={q}
-                  onClick={() => handleAsk(q)}
-                  className="px-3 py-1.5 text-sm rounded-full bg-slate-200 dark:bg-zinc-800 hover:bg-slate-300 dark:hover:bg-zinc-700 transition-colors"
+                  key={category}
+                  className={`filter-chip ${activeCategory === category ? "filter-chip-active" : ""}`}
+                  type="button"
+                  onClick={() => setActiveCategory(category)}
+                  aria-pressed={activeCategory === category}
                 >
-                  {q}
+                  {isArabic ? categoryLabels[category] : category === "All" ? t.chipAll : category}
                 </button>
               ))}
             </div>
-          </div>
+          )}
 
-          {/* Events Results */}
-          <div className="pt-8 min-h-[200px]">
-            {loadingEvents ? (
-              <div className="flex flex-col items-center justify-center text-slate-500 py-12">
-                <Loader2 className="w-8 h-8 animate-spin text-blue-500 mb-4" />
-                <p>Searching for the best answers...</p>
-              </div>
-            ) : errorEvents ? (
-              <div className="p-6 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 rounded-2xl border border-red-200 dark:border-red-800 text-center">
-                <p>{errorEvents}</p>
-              </div>
-            ) : events.length > 0 ? (
-              <div className="space-y-6">
-                <h3 className="text-2xl font-bold border-b border-slate-200 dark:border-zinc-800 pb-2">Results</h3>
-                <div className="grid gap-6 md:grid-cols-2">
-                  {events.map((event, idx) => (
-                    <div key={idx} className="bg-white dark:bg-zinc-900 rounded-2xl p-6 shadow-sm border border-slate-200 dark:border-zinc-800 hover:shadow-md transition-shadow flex flex-col h-full">
-                      <h4 className="text-xl font-semibold mb-3">{event.title}</h4>
-                      <p className="text-slate-600 dark:text-slate-400 mb-4 flex-grow">
-                        {event.short_description}
-                      </p>
-                      
-                      <div className="space-y-2 text-sm text-slate-500 dark:text-slate-400 mb-4 mt-auto pt-4 border-t border-slate-100 dark:border-zinc-800">
-                        <div className="flex items-center gap-2">
-                          <Calendar className="w-4 h-4 flex-shrink-0" />
-                          <span className="truncate">{event.date || 'Date not confirmed'}</span>
-                        </div>
-                        {event.location && event.location !== 'unknown' && (
-                          <div className="flex items-center gap-2">
-                            <MapPin className="w-4 h-4 flex-shrink-0" />
-                            <span className="truncate">{event.location}</span>
-                          </div>
-                        )}
-                      </div>
-                      
-                      {event.source_url && (
-                        <a 
-                          href={event.source_url} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1.5 text-sm font-medium text-blue-600 dark:text-blue-400 hover:underline mt-2"
-                        >
-                          Source <ExternalLink className="w-3.5 h-3.5" />
-                        </a>
-                      )}
-                    </div>
-                  ))}
+          {loadingEvents && <div className="event-grid" aria-label={t.loading}><EventSkeleton /><EventSkeleton /><EventSkeleton /></div>}
+          {errorEvents && <div className="notice notice-error"><Info size={18} /><span>{errorEvents}</span></div>}
+          {eventsNote && !loadingEvents && !errorEvents && <div className="notice notice-info"><Info size={18} /><span>{isArabic && eventsNote.includes("migration") ? t.curatedNote : eventsNote}</span></div>}
+
+          {searched && !loadingEvents && !errorEvents && filteredEvents.length > 0 && (
+            <div className="result-groups">
+              {curatedEvents.length > 0 && (
+                <div className="result-group">
+                  <div className="group-heading"><span className="group-dot curated-dot" /><h3>{isArabic ? "فعاليات مختارة" : "Curated for Kuwait"}</h3><span>{curatedEvents.length}</span></div>
+                  <div className="event-grid">{curatedEvents.map(renderEventCard)}</div>
                 </div>
-                {eventsNote && (
-                  <div className="p-4 bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 rounded-xl border border-amber-200 dark:border-amber-800 text-sm">
-                    {eventsNote}
-                  </div>
-                )}
-              </div>
-            ) : question && !loadingEvents ? (
-              <div className="text-center py-12 text-slate-500">
-                <Info className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                <p>No results found. Try asking something else!</p>
-              </div>
-            ) : null}
-          </div>
+              )}
+              {webEvents.length > 0 && (
+                <div className="result-group">
+                  <div className="group-heading"><span className="group-dot web-dot" /><h3>{isArabic ? "اكتشافات من الإنترنت" : "More from the web"}</h3><span>{webEvents.length}</span></div>
+                  <div className="event-grid">{webEvents.map(renderEventCard)}</div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {searched && !loadingEvents && !errorEvents && filteredEvents.length === 0 && (
+            <div className="empty-state"><span className="empty-icon"><Search size={23} /></span><h3>{t.noResults}</h3><p>{t.noResultsHint}</p></div>
+          )}
+
+          {!searched && !loadingEvents && (
+            <div className="welcome-card"><span className="welcome-icon"><Sparkles size={19} /></span><p>{t.emptyPrompt}</p><span className="welcome-decoration">✳</span></div>
+          )}
         </section>
 
-        {/* Places Section */}
-        <section className="space-y-6 pt-12 border-t border-slate-200 dark:border-zinc-800">
-          <div className="flex items-center justify-between">
-            <h2 className="text-3xl font-bold tracking-tight">Popular Places</h2>
+        <section className="places-section content-width">
+          <div className="section-heading places-heading">
+            <div><p className="section-kicker">{isArabic ? "وجهات محلية" : "EXPLORE THE CITY"}</p><h2>{t.placesTitle}</h2><p className="section-subtitle">{t.placesSubtitle}</p></div>
+            <span className="places-icon"><MapPin size={21} /></span>
           </div>
-
           {loadingPlaces ? (
-            <div className="flex justify-center py-12">
-              <Loader2 className="w-6 h-6 animate-spin text-slate-400" />
-            </div>
+            <div className="places-grid" aria-label={t.loadingPlaces}>{[1, 2, 3].map((item) => <div className="place-skeleton" key={item}><div /><span /><span /></div>)}</div>
           ) : errorPlaces ? (
-            <div className="p-4 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 rounded-xl text-center">
-              <p>{errorPlaces}</p>
-            </div>
+            <div className="notice notice-info"><Info size={18} /><span>{t.placesError}</span></div>
           ) : places.length > 0 ? (
-            <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-              {places.map((place, idx) => (
-                <div key={place.id || idx} className="group bg-white dark:bg-zinc-900 rounded-2xl overflow-hidden border border-slate-200 dark:border-zinc-800 shadow-sm hover:shadow-md transition-all">
-                  <div className="p-6">
-                    <h3 className="text-lg font-bold mb-2 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
-                      {place.name || place.title || 'Unnamed Place'}
-                    </h3>
-                    <p className="text-slate-600 dark:text-slate-400 text-sm line-clamp-3 mb-4">
-                      {place.description || 'No description available.'}
-                    </p>
-                    
-                    {place.location_url && (
-                      <a 
-                        href={place.location_url} 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-700 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400"
-                      >
-                        <MapPin className="w-4 h-4" /> View on map
-                      </a>
-                    )}
-                  </div>
-                </div>
+            <div className="places-grid">
+              {places.map((place, index) => (
+                <article className="place-card" key={place.id ?? `${place.name ?? place.title}-${index}`}>
+                  <div className="place-card-icon"><MapPin size={18} /></div>
+                  <h3>{place.name || place.title || (isArabic ? "مكان مميز" : "Local place")}</h3>
+                  <p>{place.description || (isArabic ? "اكتشف تفاصيل هذا المكان." : "A local spot to add to your list.")}</p>
+                  {place.location_url && <a href={place.location_url} target="_blank" rel="noopener noreferrer">{t.map}<ExternalLink size={14} /></a>}
+                </article>
               ))}
             </div>
           ) : (
-            <div className="text-center py-12 text-slate-500 bg-slate-100 dark:bg-zinc-900/50 rounded-2xl">
-              <p>No places found.</p>
-            </div>
+            <div className="places-empty"><Compass size={23} /><p>{t.noPlaces}</p></div>
           )}
         </section>
       </main>
+
+      <footer className="site-footer content-width"><span className="footer-brand"><Compass size={15} />{t.brand}</span><p>{t.privacy}</p></footer>
     </div>
   );
 }
