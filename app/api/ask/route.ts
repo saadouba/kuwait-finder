@@ -309,37 +309,57 @@ export async function POST(request: Request) {
     let webItems: EventItem[] = [];
 
     if (sources.length > 0) {
-      const groqResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${groqKey}`,
-        },
-        body: JSON.stringify({
-          model: process.env.GROQ_MODEL || "openai/gpt-oss-120b",
-          messages: [
-            {
-              role: "system",
-              content: `You extract real upcoming events in Kuwait from provided search snippets. The current date in Kuwait is ${today} (${KUWAIT_TIME_ZONE}). The user's exact query is provided separately. Return only JSON: {"items":[{"title":"...","date":"YYYY-MM-DD or null","location":"... or null","description":"...","category":"Family|Culture|Food|Sports|Entertainment|Nature|Shopping|Other","source_url":"exact supplied URL"}]}. Use only facts explicitly supported by that source. Never infer or calculate event dates; if the source does not explicitly state a full calendar date with a year, date must be null. Never infer a venue or location; use null unless named in the source. Include only events actually located in Kuwait; skip other countries and unrelated results. Do not include past events. For today, tonight, this weekend (Friday and Saturday in Kuwait), or this week (today through Saturday), return only events in that date window; when an event date is not explicitly confirmed, omit it for a date-window question. Keep descriptions factual and brief. Categorize only when the source supports it. Return at most 12 items.`,
-            },
-            {
-              role: "user",
-              content: `Question: ${question.trim()}\nCurrent date: ${today}\nSearch sources:\n${JSON.stringify(sources.map((source) => ({ title: source.title, url: source.url, content: source.content })))}`,
-            },
-          ],
-          response_format: { type: "json_object" },
-          reasoning_effort: "low",
-        }),
-        signal: AbortSignal.timeout(30_000),
-        cache: "no-store",
-      });
+      const groqModel = process.env.GROQ_MODEL?.trim() || "openai/gpt-oss-120b";
+      let groqResponse: Response | null = null;
 
-      if (!groqResponse.ok) {
-        console.error(`Groq extraction returned status ${groqResponse.status}.`);
+      try {
+        groqResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${groqKey}`,
+          },
+          body: JSON.stringify({
+            model: groqModel,
+            messages: [
+              {
+                role: "system",
+                content: `You extract real upcoming events in Kuwait from provided search snippets. The current date in Kuwait is ${today} (${KUWAIT_TIME_ZONE}). The user's exact query is provided separately. Return only JSON: {"items":[{"title":"...","date":"YYYY-MM-DD or null","location":"... or null","description":"...","category":"Family|Culture|Food|Sports|Entertainment|Nature|Shopping|Other","source_url":"exact supplied URL"}]}. Use only facts explicitly supported by that source. Never infer or calculate event dates; if the source does not explicitly state a full calendar date with a year, date must be null. Never infer a venue or location; use null unless named in the source. Include only events actually located in Kuwait; skip other countries and unrelated results. Do not include past events. For today, tonight, this weekend (Friday and Saturday in Kuwait), or this week (today through Saturday), return only events in that date window; when an event date is not explicitly confirmed, omit it for a date-window question. Keep descriptions factual and brief. Categorize only when the source supports it. Return at most 12 items.`,
+              },
+              {
+                role: "user",
+                content: `Question: ${question.trim()}\nCurrent date: ${today}\nSearch sources:\n${JSON.stringify(sources.map((source) => ({ title: source.title, url: source.url, content: source.content })))}`,
+              },
+            ],
+            // Groq JSON Object Mode requires response_format plus an explicit JSON instruction above.
+            response_format: { type: "json_object" },
+            reasoning_effort: "low",
+          }),
+          signal: AbortSignal.timeout(30_000),
+          cache: "no-store",
+        });
+      } catch (error) {
+        console.error("Groq extraction request failed:", {
+          model: groqModel,
+          error: error instanceof Error ? error.message : String(error),
+        });
         if (curated.items.length === 0) {
           return NextResponse.json({ error: "Event extraction is temporarily unavailable. Please try again." }, { status: 502 });
         }
-      } else {
+      }
+
+      if (groqResponse && !groqResponse.ok) {
+        const errorBody = await groqResponse.text();
+        console.error("Groq extraction returned an API error:", {
+          model: groqModel,
+          status: groqResponse.status,
+          requestId: groqResponse.headers.get("x-request-id") ?? groqResponse.headers.get("x-groq-request-id"),
+          body: errorBody.slice(0, 4_000),
+        });
+        if (curated.items.length === 0) {
+          return NextResponse.json({ error: "Event extraction is temporarily unavailable. Please try again." }, { status: 502 });
+        }
+      } else if (groqResponse?.ok) {
         const groqData = await groqResponse.json();
         webItems = parseGroqItems(groqData.choices?.[0]?.message?.content, sources, today, range);
       }
