@@ -32,6 +32,7 @@ type DiscoveryItem = {
   slug?: string;
   title: string;
   date: string | null;
+  dateUnconfirmed?: boolean;
   location: string | null;
   description: string;
   category: Category;
@@ -121,6 +122,7 @@ const copy = {
     dateUnconfirmed: "Date not confirmed",
     noResults: "No source-backed matches yet",
     noResultsHint: "Try a broader search. Events without confirmed dates are kept when the source supports them.",
+    devNoResultsHint: "Search returned nothing. Check the server logs.",
     searchError: "We couldn’t complete that search. Please try again.",
     providerSetup: "Add the server-side Groq and Tavily keys to enable web search.",
     protectionSetup: "Search protection is not ready. Apply the Supabase migration and check the server-side environment variables.",
@@ -168,6 +170,7 @@ const copy = {
     dateUnconfirmed: "التاريخ غير مؤكد",
     noResults: "لا توجد نتائج موثقة بعد",
     noResultsHint: "جرّب بحثاً أوسع. نعرض الفعاليات التي لا يتأكد تاريخها عندما يدعمها المصدر.",
+    devNoResultsHint: "لم يُرجع البحث نتائج. تحقق من سجلات الخادم.",
     searchError: "تعذّر إكمال البحث. حاول مرة أخرى.",
     providerSetup: "أضف مفاتيح Groq وTavily في إعدادات الخادم لتفعيل البحث عبر الإنترنت.",
     protectionSetup: "حماية البحث غير جاهزة. طبّق ترحيل Supabase وتحقق من متغيرات الخادم.",
@@ -389,7 +392,7 @@ export default function Home() {
       {item.isSample && <p className="sample-explanation">{t.sampleExplanation}</p>}
       <p className="event-description">{item.description}</p>
       <div className="event-meta">
-        {item.category === "Events" && (
+        {(item.category === "Events" || item.dateUnconfirmed) && (
           <div className="meta-row">
             <CalendarDays size={16} aria-hidden="true" />
             {item.date ? <time dateTime={item.date}>{formatDate(item.date)}</time> : <span className="unconfirmed-date">{t.dateUnconfirmed}</span>}
@@ -501,7 +504,10 @@ export default function Home() {
           )}
 
           {searched && !loadingSearch && !searchError && visibleSearch.length === 0 && (
-            <div className="empty-state glass-card"><span className="empty-icon"><Search size={23} /></span><h3>{t.noResults}</h3><p>{t.noResultsHint}</p></div>
+            <div className="empty-state glass-card">
+              <span className="empty-icon"><Search size={23} /></span><h3>{t.noResults}</h3><p>{t.noResultsHint}</p>
+              {process.env.NODE_ENV === "development" && searchItems.length === 0 && <small className="search-dev-hint">{t.devNoResultsHint}</small>}
+            </div>
           )}
 
           {!searched && !loadingDirectory && directoryItems.length === 0 && !directoryError && (
