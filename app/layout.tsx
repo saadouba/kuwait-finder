@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { IBM_Plex_Sans_Arabic, Manrope, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import "leaflet/dist/leaflet.css";
 
 const manrope = Manrope({
   variable: "--font-manrope",
