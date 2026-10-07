@@ -232,6 +232,37 @@ function itemIdentity(item: DiscoveryItem): string {
   return item.slug || item.source_url || `${item.category}:${item.title}:${item.latitude ?? ""}:${item.longitude ?? ""}`;
 }
 
+function normalizeSearchItem(value: unknown): DiscoveryItem | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const item = value as Record<string, unknown>;
+  const categories: Record<string, Category> = {
+    events: "Events",
+    places: "Places",
+    restaurants_cafes: "Restaurants & Cafes",
+    family_activities: "Family Activities",
+  };
+  const category = typeof item.category === "string" ? categories[item.category] : undefined;
+  const title = typeof item.title === "string" ? item.title.trim() : "";
+  const descriptionValue = typeof item.short_description === "string" ? item.short_description : item.description;
+  const description = typeof descriptionValue === "string" ? descriptionValue.trim().slice(0, 160) : "";
+  if (!category || !title || !description) return null;
+  const date = category === "Events" && typeof item.date === "string" ? item.date : null;
+  return {
+    slug: typeof item.slug === "string" ? item.slug : undefined,
+    title,
+    date,
+    dateUnconfirmed: category === "Events" && (item.dateUnconfirmed === true || date === null),
+    location: typeof item.location === "string" && item.location.trim() ? item.location : "Kuwait",
+    description,
+    category,
+    source_url: typeof item.source_url === "string" ? item.source_url : null,
+    isCurated: item.isCurated === true,
+    isSample: item.isSample === true,
+    latitude: typeof item.latitude === "number" ? item.latitude : null,
+    longitude: typeof item.longitude === "number" ? item.longitude : null,
+  };
+}
+
 export default function Home() {
   const language = useSyncExternalStore(subscribeToLanguage, getLanguageSnapshot, getLanguageServerSnapshot);
   const [question, setQuestion] = useState("");
@@ -293,7 +324,8 @@ export default function Home() {
         if (data.code === "SEARCH_PROVIDER_SETUP_REQUIRED") throw new Error(t.providerSetup);
         throw new Error(typeof data.error === "string" ? data.error : t.searchError);
       }
-      const receivedItems = Array.isArray(data.items) ? data.items as DiscoveryItem[] : [];
+      const rawItems: unknown[] = Array.isArray(data.items) ? data.items as unknown[] : [];
+      const receivedItems = rawItems.map(normalizeSearchItem).filter((item): item is DiscoveryItem => item !== null);
       setSearchItems(receivedItems);
       if (data.curatedMissingTable) setSearchNote(t.directoryMigration);
       else if (data.curatedUnavailable) setSearchNote(t.placesError);
