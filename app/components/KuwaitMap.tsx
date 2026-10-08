@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { MapContainer, Marker, Popup, TileLayer } from "react-leaflet";
+import { useEffect, useMemo, useState } from "react";
+import { MapContainer, Marker, Popup, TileLayer, useMap } from "react-leaflet";
 import L from "leaflet";
 import { ExternalLink, MapPin } from "lucide-react";
 
@@ -22,6 +22,8 @@ type MapItem = {
 type Props = {
   items: MapItem[];
   language: "en" | "ar";
+  focusItemId?: string | null;
+  prefersReducedMotion?: boolean;
 };
 
 const text = {
@@ -63,12 +65,25 @@ function dateLabel(date: string | null, language: "en" | "ar") {
   });
 }
 
-export default function KuwaitMap({ items, language }: Props) {
+function FocusPin({ item, reducedMotion }: { item: MapItem | null; reducedMotion: boolean }) {
+  const map = useMap();
+  useEffect(() => {
+    if (!item || item.latitude === null || item.longitude === null) return;
+    const position: [number, number] = [item.latitude, item.longitude];
+    const zoom = Math.max(map.getZoom(), 14);
+    if (reducedMotion) map.setView(position, zoom);
+    else map.flyTo(position, zoom, { duration: 0.65 });
+  }, [item, map, reducedMotion]);
+  return null;
+}
+
+export default function KuwaitMap({ items, language, focusItemId = null, prefersReducedMotion = false }: Props) {
   const isArabic = language === "ar";
   const t = text[language];
   const [selected, setSelected] = useState<MapItem | null>(null);
   const pins = useMemo(() => items.filter((item) => item.latitude !== null && item.longitude !== null), [items]);
-  const selectedVisible = selected && pins.some((item) => item.id === selected.id) ? selected : null;
+  const focusItem = focusItemId ? pins.find((item) => item.id === focusItemId) ?? null : null;
+  const selectedVisible = selected && pins.some((item) => item.id === selected.id) ? selected : focusItem;
   const icons = useMemo(() => ({
     verified: L.divIcon({
       className: "kuwait-map-pin-shell",
@@ -104,6 +119,7 @@ export default function KuwaitMap({ items, language }: Props) {
           scrollWheelZoom={false}
           aria-label={t.mapLabel}
         >
+          <FocusPin item={focusItem} reducedMotion={prefersReducedMotion} />
           <TileLayer
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"

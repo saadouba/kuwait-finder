@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState, useSyncExternalStore, type FormEvent, type PointerEvent as ReactPointerEvent } from "react";
-import { motion, useReducedMotion } from "framer-motion";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   ArrowDown,
   ArrowUpRight,
@@ -17,6 +17,7 @@ import {
   MapPin,
   Search,
   Sparkles,
+  X,
 } from "lucide-react";
 import HeroSceneLoader from "@/app/components/HeroSceneLoader";
 
@@ -32,6 +33,13 @@ type DiscoveryItem = {
   slug?: string;
   title: string;
   date: string | null;
+  date_start: string | null;
+  date_end: string | null;
+  time: string | null;
+  venue: string | null;
+  address: string | null;
+  price: string | null;
+  long_description: string | null;
   dateUnconfirmed?: boolean;
   location: string | null;
   description: string;
@@ -130,7 +138,7 @@ const copy = {
     directoryTitle: "Explore Kuwait",
     directorySubtitle: "Verified local places, curated listings, and map pins in one place.",
     placesError: "Directory data is temporarily unavailable.",
-    directoryMigration: "Curated events or places are not set up yet. Run the Supabase migration and seed SQL to enable the directory.",
+    directoryMigration: "The Supabase event or directory schema is not up to date. Apply all migrations; the sample seed is optional.",
     noDirectory: "No items in this category yet.",
     mapView: "Map",
     listView: "List",
@@ -149,6 +157,18 @@ const copy = {
     sampleExplanation: "Demo-only placeholder. This is not a real event listing.",
     event: "Event",
     locationFallback: "Kuwait",
+    expandDetails: "Expand details",
+    collapseDetails: "Collapse details",
+    details: "More information",
+    dateLabel: "Date",
+    timeLabel: "Time",
+    venueLabel: "Venue",
+    addressLabel: "Address",
+    priceLabel: "Price",
+    locationLabel: "Location",
+    categoryLabel: "Category",
+    showOnMap: "Show on map",
+    closeDetails: "Close details",
     mapLoading: "Loading map…",
     sampleDirectoryNote: "Sample events are marked clearly and are never treated as real search results.",
   },
@@ -178,7 +198,7 @@ const copy = {
     directoryTitle: "اكتشف الكويت",
     directorySubtitle: "أماكن محلية مختارة وقوائم موثقة ونقاط على الخريطة.",
     placesError: "بيانات الدليل غير متاحة مؤقتاً.",
-    directoryMigration: "لم يتم إعداد الأماكن أو الفعاليات بعد. شغّل ترحيل Supabase وملف البيانات التجريبية.",
+    directoryMigration: "مخطط الفعاليات أو دليل الأماكن في Supabase غير مكتمل. طبّق جميع ملفات الترحيل؛ والبيانات التجريبية اختيارية.",
     noDirectory: "لا توجد عناصر في هذه الفئة بعد.",
     mapView: "الخريطة",
     listView: "القائمة",
@@ -197,6 +217,18 @@ const copy = {
     sampleExplanation: "عنصر تجريبي فقط، وليس إعلاناً عن فعالية حقيقية.",
     event: "فعالية",
     locationFallback: "الكويت",
+    expandDetails: "عرض التفاصيل",
+    collapseDetails: "إخفاء التفاصيل",
+    details: "معلومات إضافية",
+    dateLabel: "التاريخ",
+    timeLabel: "الوقت",
+    venueLabel: "المكان",
+    addressLabel: "العنوان",
+    priceLabel: "السعر",
+    locationLabel: "الموقع",
+    categoryLabel: "الفئة",
+    showOnMap: "اعرض على الخريطة",
+    closeDetails: "إغلاق التفاصيل",
     mapLoading: "جارٍ تحميل الخريطة…",
     sampleDirectoryNote: "الفعاليات التجريبية موسومة بوضوح ولا تظهر أبداً كفعاليات حقيقية في نتائج البحث.",
   },
@@ -232,6 +264,10 @@ function itemIdentity(item: DiscoveryItem): string {
   return item.slug || item.source_url || `${item.category}:${item.title}:${item.latitude ?? ""}:${item.longitude ?? ""}`;
 }
 
+function itemMapId(item: DiscoveryItem): string {
+  return item.id || item.slug || itemIdentity(item);
+}
+
 function normalizeSearchItem(value: unknown): DiscoveryItem | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const item = value as Record<string, unknown>;
@@ -246,11 +282,20 @@ function normalizeSearchItem(value: unknown): DiscoveryItem | null {
   const descriptionValue = typeof item.short_description === "string" ? item.short_description : item.description;
   const description = typeof descriptionValue === "string" ? descriptionValue.trim().slice(0, 160) : "";
   if (!category || !title || !description) return null;
-  const date = category === "Events" && typeof item.date === "string" ? item.date : null;
+  const dateStartValue = typeof item.date_start === "string" ? item.date_start : item.date;
+  const date = category === "Events" && typeof dateStartValue === "string" ? dateStartValue : null;
   return {
+    id: typeof item.id === "string" ? item.id : undefined,
     slug: typeof item.slug === "string" ? item.slug : undefined,
     title,
     date,
+    date_start: date,
+    date_end: category === "Events" && typeof item.date_end === "string" ? item.date_end : null,
+    time: typeof item.time === "string" ? item.time : null,
+    venue: typeof item.venue === "string" ? item.venue : null,
+    address: typeof item.address === "string" ? item.address : null,
+    price: typeof item.price === "string" ? item.price : null,
+    long_description: typeof item.long_description === "string" ? item.long_description.trim().slice(0, 500) : null,
     dateUnconfirmed: category === "Events" && (item.dateUnconfirmed === true || date === null),
     location: typeof item.location === "string" && item.location.trim() ? item.location : "Kuwait",
     description,
@@ -277,6 +322,8 @@ export default function Home() {
   const [loadingDirectory, setLoadingDirectory] = useState(true);
   const [directoryError, setDirectoryError] = useState(false);
   const [directoryView, setDirectoryView] = useState<"list" | "map">("list");
+  const [expandedCardId, setExpandedCardId] = useState<string | null>(null);
+  const [mapFocusId, setMapFocusId] = useState<string | null>(null);
   const prefersReducedMotion = useReducedMotion();
 
   const isArabic = language === "ar";
@@ -292,6 +339,26 @@ export default function Home() {
     document.documentElement.lang = language;
     document.documentElement.dir = isArabic ? "rtl" : "ltr";
   }, [isArabic, language]);
+
+  useEffect(() => {
+    if (!expandedCardId) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        document.getElementById(`card-trigger-${encodeURIComponent(expandedCardId)}`)?.focus();
+        setExpandedCardId(null);
+      }
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [expandedCardId]);
+
+  useEffect(() => {
+    if (directoryView !== "map") return;
+    const timeout = window.setTimeout(() => {
+      document.getElementById("directory-map")?.scrollIntoView({ behavior: prefersReducedMotion ? "auto" : "smooth", block: "center" });
+    }, 120);
+    return () => window.clearTimeout(timeout);
+  }, [directoryView, mapFocusId, prefersReducedMotion]);
 
   const changeLanguage = () => {
     const next: Language = isArabic ? "en" : "ar";
@@ -310,12 +377,13 @@ export default function Home() {
     setSearchItems([]);
     setSearchNote(null);
     setActiveCategory("All");
+    setExpandedCardId(null);
 
     try {
       const response = await fetch("/api/ask", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: trimmed }),
+        body: JSON.stringify({ question: trimmed, language }),
       });
       const data = await response.json();
       if (!response.ok) {
@@ -382,11 +450,11 @@ export default function Home() {
       if (seen.has(key)) return [];
       seen.add(key);
       return [{
-        id: item.id || key,
+        id: itemMapId(item),
         slug: item.slug,
         title: item.title,
-        date: item.date,
-        location: item.location || t.locationFallback,
+        date: item.date_start ?? item.date,
+        location: item.location && item.location !== "Kuwait" ? item.location : t.locationFallback,
         description: item.description,
         category: item.category,
         source_url: item.source_url,
@@ -405,40 +473,103 @@ export default function Home() {
     { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Kuwait" },
   );
 
-  const renderCard = (item: DiscoveryItem, index: number) => (
-    <motion.article
-      className={`event-card glass-card tilt-card ${item.isSample ? "sample-card" : ""}`}
-      key={`${item.id || itemIdentity(item)}-${index}`}
-      onPointerMove={tiltCard}
-      onPointerLeave={resetTilt}
-      {...reveal(index * 0.035)}
-    >
-      <div className="event-card-topline">
-        <span className={`event-source-tag ${item.isSample ? "sample-tag" : item.isCurated ? "curated-tag" : "web-tag"}`}>
-          {item.isSample ? <Info size={13} aria-hidden="true" /> : item.isCurated ? <Check size={13} aria-hidden="true" /> : <Globe2 size={13} aria-hidden="true" />}
-          {item.isSample ? t.sampleBadge : item.isCurated ? t.curated : t.web}
-        </span>
-        <span className="category-tag">{categoryText(item.category)}</span>
-      </div>
-      <h3 className="event-title">{item.title}</h3>
-      {item.isSample && <p className="sample-explanation">{t.sampleExplanation}</p>}
-      <p className="event-description">{item.description}</p>
-      <div className="event-meta">
-        {(item.category === "Events" || item.dateUnconfirmed) && (
-          <div className="meta-row">
-            <CalendarDays size={16} aria-hidden="true" />
-            {item.date ? <time dateTime={item.date}>{formatDate(item.date)}</time> : <span className="unconfirmed-date">{t.dateUnconfirmed}</span>}
-          </div>
+  const renderCard = (item: DiscoveryItem, index: number, section: "curated-search" | "web-search" | "directory") => {
+    const mapItemId = itemMapId(item);
+    const cardId = `${section}:${mapItemId}`;
+    const detailsId = `card-details-${encodeURIComponent(cardId)}`;
+    const triggerId = `card-trigger-${encodeURIComponent(cardId)}`;
+    const expanded = expandedCardId === cardId;
+    const locationText = item.location && item.location !== "Kuwait" ? item.location : t.locationFallback;
+    const eventDate = item.date_start ?? item.date;
+    const dateText = eventDate
+      ? `${formatDate(eventDate)}${item.date_end && item.date_end !== eventDate ? ` – ${formatDate(item.date_end)}` : ""}`
+      : t.dateUnconfirmed;
+    const detailRows: Array<{ label: string; value: string }> = [];
+    if (item.category === "Events") detailRows.push({ label: t.dateLabel, value: dateText });
+    if (item.time) detailRows.push({ label: t.timeLabel, value: item.time });
+    if (item.venue) detailRows.push({ label: t.venueLabel, value: item.venue });
+    if (item.address) detailRows.push({ label: t.addressLabel, value: item.address });
+    if (item.price) detailRows.push({ label: t.priceLabel, value: item.price });
+    if (locationText && locationText !== item.address) detailRows.push({ label: t.locationLabel, value: locationText });
+    detailRows.push({ label: t.categoryLabel, value: categoryText(item.category) });
+
+    const showOnMap = () => {
+      setExpandedCardId(null);
+      setMapFocusId(item.latitude !== null && item.longitude !== null ? mapItemId : null);
+      setDirectoryView("map");
+    };
+
+    return (
+      <motion.article
+        className={`event-card glass-card tilt-card ${item.isSample ? "sample-card" : ""} ${expanded ? "event-card-expanded" : ""}`}
+        key={`${cardId}-${index}`}
+        onPointerMove={tiltCard}
+        onPointerLeave={resetTilt}
+        {...reveal(index * 0.035)}
+      >
+        <button
+          id={triggerId}
+          className="card-expand-trigger"
+          type="button"
+          aria-expanded={expanded}
+          aria-controls={expanded ? detailsId : undefined}
+          aria-label={`${expanded ? t.collapseDetails : t.expandDetails}: ${item.title}`}
+          onClick={() => setExpandedCardId(expanded ? null : cardId)}
+        >
+          <span className="event-card-topline">
+            <span className={`event-source-tag ${item.isSample ? "sample-tag" : item.isCurated ? "curated-tag" : "web-tag"}`}>
+              {item.isSample ? <Info size={13} aria-hidden="true" /> : item.isCurated ? <Check size={13} aria-hidden="true" /> : <Globe2 size={13} aria-hidden="true" />}
+              {item.isSample ? t.sampleBadge : item.isCurated ? t.curated : t.web}
+            </span>
+            <span className="category-tag">{categoryText(item.category)}</span>
+          </span>
+          <span className="event-title" role="heading" aria-level={3}>{item.title}</span>
+          {item.isSample && <span className="sample-explanation">{t.sampleExplanation}</span>}
+          <span className="event-description">{item.description}</span>
+          <span className="event-meta">
+            {(item.category === "Events" || item.dateUnconfirmed) && (
+              <span className="meta-row">
+                <CalendarDays size={16} aria-hidden="true" />
+                {eventDate ? <time dateTime={eventDate}>{formatDate(eventDate)}{item.date_end && item.date_end !== eventDate ? ` – ${formatDate(item.date_end)}` : ""}</time> : <span className="unconfirmed-date">{t.dateUnconfirmed}</span>}
+              </span>
+            )}
+            <span className="meta-row"><MapPin size={16} aria-hidden="true" /><span>{locationText}</span></span>
+          </span>
+        </button>
+        {item.source_url && (
+          <a className="event-link" href={item.source_url} target="_blank" rel="noopener noreferrer">
+            {t.source}<ExternalLink size={14} aria-hidden="true" />
+          </a>
         )}
-        <div className="meta-row"><MapPin size={16} aria-hidden="true" /><span>{item.location || t.locationFallback}</span></div>
-      </div>
-      {item.source_url && (
-        <a className="event-link" href={item.source_url} target="_blank" rel="noopener noreferrer">
-          {t.source}<ExternalLink size={14} aria-hidden="true" />
-        </a>
-      )}
-    </motion.article>
-  );
+        <AnimatePresence initial={false}>
+          {expanded && (
+            <motion.div
+              id={detailsId}
+              key="expanded-details"
+              className="card-expand-panel"
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: prefersReducedMotion ? 0 : 0.3, ease: "easeInOut" }}
+            >
+              <div className="card-detail-inner">
+                <button className="card-detail-close" type="button" aria-label={t.closeDetails} onClick={() => { document.getElementById(triggerId)?.focus(); setExpandedCardId(null); }}><X size={15} aria-hidden="true" /></button>
+                <h4 className="card-detail-title">{t.details}</h4>
+                <p>{item.long_description || item.description}</p>
+                <dl className="card-detail-list">
+                  {detailRows.map((row) => <div className="card-detail-row" key={row.label}><dt>{row.label}</dt><dd>{row.value}</dd></div>)}
+                </dl>
+                {item.source_url && <a className="card-detail-source" href={item.source_url} target="_blank" rel="noopener noreferrer">{t.source}<ExternalLink size={13} aria-hidden="true" /></a>}
+                <div className="card-detail-actions">
+                  <button type="button" onClick={showOnMap}><Map size={15} aria-hidden="true" />{t.showOnMap}</button>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </motion.article>
+    );
+  };
 
   const directoryNeedsMigration = Boolean(directoryNote && (directoryNote.includes("migration") || directoryNote.includes("not-configured")));
 
@@ -523,13 +654,13 @@ export default function Home() {
               {curatedSearch.length > 0 && (
                 <div className="result-group">
                   <div className="group-heading"><span className="group-dot curated-dot" /><h3>{t.curatedHeading}</h3><span>{curatedSearch.length}</span></div>
-                  <div className="event-grid">{curatedSearch.map(renderCard)}</div>
+                  <div className="event-grid">{curatedSearch.map((item, index) => renderCard(item, index, "curated-search"))}</div>
                 </div>
               )}
               {webSearch.length > 0 && (
                 <div className="result-group">
                   <div className="group-heading"><span className="group-dot web-dot" /><h3>{t.webHeading}</h3><span>{webSearch.length}</span></div>
-                  <div className="event-grid">{webSearch.map(renderCard)}</div>
+                  <div className="event-grid">{webSearch.map((item, index) => renderCard(item, index, "web-search"))}</div>
                 </div>
               )}
             </div>
@@ -555,7 +686,7 @@ export default function Home() {
               <p className="section-subtitle">{t.directorySubtitle}</p>
             </div>
             <div className="view-toggle glass-card" role="group" aria-label={isArabic ? "طريقة العرض" : "Directory view"}>
-              <button type="button" className={directoryView === "list" ? "view-toggle-active" : ""} onClick={() => setDirectoryView("list")} aria-pressed={directoryView === "list"}><List size={15} />{t.listView}</button>
+              <button type="button" className={directoryView === "list" ? "view-toggle-active" : ""} onClick={() => { setMapFocusId(null); setDirectoryView("list"); }} aria-pressed={directoryView === "list"}><List size={15} />{t.listView}</button>
               <button type="button" className={directoryView === "map" ? "view-toggle-active" : ""} onClick={() => setDirectoryView("map")} aria-pressed={directoryView === "map"}><Map size={15} />{t.mapView}</button>
             </div>
           </div>
@@ -569,9 +700,9 @@ export default function Home() {
           ) : directoryError ? (
             <div className="notice notice-info glass-card"><Info size={18} /><span>{t.placesError}</span></div>
           ) : directoryView === "map" ? (
-            <KuwaitMap items={mapItems} language={language} />
+            <div id="directory-map"><KuwaitMap key={mapFocusId ?? "directory-map"} items={mapItems} language={language} focusItemId={mapFocusId} prefersReducedMotion={Boolean(prefersReducedMotion)} /></div>
           ) : visibleDirectory.length > 0 ? (
-            <div className="event-grid directory-grid">{visibleDirectory.map(renderCard)}</div>
+            <div className="event-grid directory-grid">{visibleDirectory.map((item, index) => renderCard(item, index, "directory"))}</div>
           ) : (
             <div className="places-empty glass-card"><Compass size={23} /><p>{t.noDirectory}</p></div>
           )}

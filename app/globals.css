@@ -297,6 +297,28 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 .arabic-ui .map-popup-content, .arabic-ui .map-focus-card { font-family: var(--font-ibm-arabic), sans-serif; }
 .arabic-ui .sample-tag, .arabic-ui .sample-badge { letter-spacing: 0; }
 
+/* Accessible in-place expansion for search results and curated directory cards. */
+.event-card-expanded { border-color: rgba(120,229,222,.4); box-shadow: inset 0 1px 0 rgba(255,255,255,.07), 0 18px 48px rgba(0,0,0,.26), 0 0 24px rgba(74,215,212,.08); }
+.card-expand-trigger { width: 100%; flex: 1 0 auto; padding: 0; border: 0; background: transparent; color: inherit; display: flex; flex-direction: column; align-items: stretch; text-align: start; cursor: pointer; }
+.card-expand-trigger:focus-visible, .card-detail-actions button:focus-visible, .card-detail-close:focus-visible { outline: 2px solid #8df0d8; outline-offset: 4px; border-radius: 7px; }
+.card-expand-trigger .event-title { display: block; }
+.card-expand-trigger .event-description { display: -webkit-box; }
+.event-card .event-link { margin-top: 12px; }
+.card-expand-panel { width: 100%; flex: 0 0 auto; overflow: hidden; }
+.card-detail-inner { position: relative; margin-top: 16px; padding-top: 17px; border-top: 1px solid rgba(182,194,244,.13); }
+.card-detail-inner > p { margin: 0 0 14px; color: #c2c9df; font-size: 11px; line-height: 1.75; }
+.card-detail-close { position: absolute; inset-block-start: 10px; inset-inline-end: 0; width: 32px; height: 32px; border: 1px solid rgba(188,205,246,.16); border-radius: 9px; background: rgba(132,149,193,.08); color: #cdd3e6; display: grid; place-items: center; cursor: pointer; }
+.card-detail-title { margin: 0 42px 13px 0; color: #dfe4f5; font-size: 10px; font-weight: 750; }
+.card-detail-list { margin: 0; display: grid; gap: 10px; }
+.card-detail-row { min-width: 0; display: grid; grid-template-columns: minmax(85px, .35fr) minmax(0, 1fr); gap: 10px; align-items: start; }
+.card-detail-row dt { color: #8994b1; font-size: 9px; font-weight: 700; }
+.card-detail-row dd { min-width: 0; margin: 0; color: #d5dbec; font-size: 10px; line-height: 1.6; overflow-wrap: anywhere; }
+.card-detail-source { margin-top: 13px; display: inline-flex; align-items: center; gap: 5px; color: #8df0d8; font-size: 10px; font-weight: 730; text-decoration: none; }
+.card-detail-actions { margin-top: 14px; display: flex; flex-wrap: wrap; gap: 8px; }
+.card-detail-actions button { min-height: 36px; padding: 0 11px; border: 1px solid rgba(106,242,208,.2); border-radius: 10px; background: rgba(106,242,208,.08); color: #a7f4e2; display: inline-flex; align-items: center; gap: 7px; font-size: 9px; font-weight: 750; cursor: pointer; }
+.card-detail-actions button:hover { background: rgba(106,242,208,.15); }
+.arabic-ui .card-detail-title { margin-inline: 0; padding-inline-end: 42px; }
+
 @media (max-width: 760px) {
   .view-toggle button { min-height: 35px; padding-inline: 9px; }
   .map-frame, .map-empty, .map-loading { min-height: 450px; }

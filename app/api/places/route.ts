@@ -9,6 +9,10 @@ function cleanText(value: unknown, fallback: string): string {
   return typeof value === "string" && value.trim() ? value.trim().slice(0, 600) : fallback;
 }
 
+function cleanDescription(value: unknown, fallback: string): string {
+  return typeof value === "string" && value.trim() ? value.trim().slice(0, 160) : fallback;
+}
+
 function coordinate(value: unknown, min: number, max: number): number | null {
   return typeof value === "number" && Number.isFinite(value) && value >= min && value <= max ? value : null;
 }
@@ -29,7 +33,8 @@ function safeUrl(value: unknown): string | null {
 }
 
 function missingTable(error: { code?: string; message?: string } | null | undefined): boolean {
-  return error?.code === "42P01" || error?.code === "PGRST205" || /relation .* does not exist|could not find the table/i.test(error?.message ?? "");
+  return error?.code === "42P01" || error?.code === "PGRST205" || error?.code === "42703" || error?.code === "PGRST204"
+    || /relation .* does not exist|could not find the table|column .* does not exist|could not find the .* column/i.test(error?.message ?? "");
 }
 
 export async function GET() {
@@ -39,8 +44,8 @@ export async function GET() {
   }
 
   const [placesResult, eventsResult] = await Promise.all([
-    supabase.from("places").select("id,slug,name,title,description,category,location,latitude,longitude,source_url,location_url,is_sample").limit(100),
-    supabase.from("events").select("id,slug,title,date,location,description,category,latitude,longitude,source_url,is_sample").order("date", { ascending: true, nullsFirst: false }).limit(100),
+    supabase.from("places").select("id,slug,name,title,description,long_description,category,location,address,time,venue,price,latitude,longitude,source_url,location_url,is_sample").limit(100),
+    supabase.from("events").select("id,slug,title,date,date_start,date_end,time,venue,address,price,location,description,long_description,category,latitude,longitude,source_url,is_sample").order("date_start", { ascending: true, nullsFirst: false }).limit(100),
   ]);
 
   const notes: string[] = [];
@@ -58,8 +63,19 @@ export async function GET() {
     slug: typeof row.slug === "string" ? row.slug : undefined,
     title: cleanText(row.name ?? row.title, "Kuwait place"),
     date: null,
+    date_start: null,
+    date_end: null,
+    time: typeof row.time === "string" && row.time.trim() ? row.time.trim().slice(0, 100) : null,
+    venue: typeof row.venue === "string" && row.venue.trim() ? row.venue.trim().slice(0, 180) : null,
+    address: typeof row.address === "string" && row.address.trim()
+      ? row.address.trim().slice(0, 240)
+      : typeof row.location === "string" && row.location.trim() && row.location.trim().toLowerCase() !== "kuwait" ? row.location.trim().slice(0, 240) : null,
+    price: typeof row.price === "string" && row.price.trim() ? row.price.trim().slice(0, 120) : null,
+    long_description: typeof row.long_description === "string" && row.long_description.trim()
+      ? row.long_description.trim().slice(0, 500)
+      : typeof row.description === "string" && row.description.trim() ? row.description.trim().slice(0, 500) : null,
     location: cleanText(row.location, "Kuwait"),
-    description: cleanText(row.description, "Explore this Kuwait destination."),
+    description: cleanDescription(row.description, "Explore this Kuwait destination."),
     category: category(row.category, "Places"),
     source_url: safeUrl(row.source_url ?? row.location_url),
     isCurated: true,
@@ -72,9 +88,18 @@ export async function GET() {
     id: String(row.id ?? row.slug ?? row.title ?? "event"),
     slug: typeof row.slug === "string" ? row.slug : undefined,
     title: cleanText(row.title, "Kuwait event"),
-    date: typeof row.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(row.date) ? row.date : null,
+    date: typeof row.date_start === "string" && /^\d{4}-\d{2}-\d{2}$/.test(row.date_start) ? row.date_start : typeof row.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(row.date) ? row.date : null,
+    date_start: typeof row.date_start === "string" && /^\d{4}-\d{2}-\d{2}$/.test(row.date_start) ? row.date_start : typeof row.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(row.date) ? row.date : null,
+    date_end: typeof row.date_end === "string" && /^\d{4}-\d{2}-\d{2}$/.test(row.date_end) ? row.date_end : null,
+    time: typeof row.time === "string" && row.time.trim() ? row.time.trim().slice(0, 100) : null,
+    venue: typeof row.venue === "string" && row.venue.trim() ? row.venue.trim().slice(0, 180) : null,
+    address: typeof row.address === "string" && row.address.trim() ? row.address.trim().slice(0, 240) : null,
+    price: typeof row.price === "string" && row.price.trim() ? row.price.trim().slice(0, 120) : null,
+    long_description: typeof row.long_description === "string" && row.long_description.trim()
+      ? row.long_description.trim().slice(0, 500)
+      : typeof row.description === "string" && row.description.trim() ? row.description.trim().slice(0, 500) : null,
     location: cleanText(row.location, "Kuwait"),
-    description: cleanText(row.description, "See the linked source for details."),
+    description: cleanDescription(row.description, "See the linked source for details."),
     category: "Events" as const,
     source_url: safeUrl(row.source_url),
     isCurated: true,
